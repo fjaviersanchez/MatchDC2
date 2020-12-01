@@ -71,7 +71,7 @@ data_stars_true = star_true.get_quantities(columns_true, filters=[f'mag_{args.ba
 tab_star = astropy.table.Table(data_stars_true)
 for col in shear_cols:
     tab_star[col] = np.zeros(len(tab_star))
-
+print('Stars available', len(tab_star))
 # We now create a "bad truth object" to point to in case that there are no matches in the truth catalog"
 
 bad_obj = dict()
@@ -94,6 +94,8 @@ for i, tract in enumerate(tracts[args.init:args.end]):
         print('Generating match for tract:', tract, i)
         data_meas = object_cat.get_quantities(columns, native_filters= [f'tract == {tract}']) #tract 2897 missing/corrupt
         print('Got', len(data_meas['ra']), 'objects in the object catalog')
+        if len(data_meas['ra']) < 1:
+            continue
         # There are some nuances in the boundaries of tracts that we are ignoring here
         max_ra = np.nanmax(data_meas['ra'])+padding
         min_ra = np.nanmin(data_meas['ra'])-padding
@@ -119,11 +121,19 @@ for i, tract in enumerate(tracts[args.init:args.end]):
         _tab_gal = astropy.table.Table(data_galaxies_true)
         _sel_star = (tab_star['ra'] >= min_ra-padding) & (tab_star['ra'] <= max_ra+padding) & (tab_star['dec'] >= min_dec-padding) & (tab_star['dec'] <= max_dec+padding)
         _tab_star = tab_star[_sel_star]
-        truth_table = astropy.table.vstack(_tab_gal, _tab_star)
+        _tab_star['id'] = _tab_star['id'].astype(np.int)
+        _tab_star['is_variable'] = _tab_star['is_variable'].astype(np.bool)
+        _tab_star['is_pointsource'] = _tab_star['is_pointsource'].astype(np.bool)
+        truth_table = astropy.table.vstack([_tab_gal, _tab_star])
+
         if args.debug:
             plt.figure()
-            plt.scatter(truth_table['ra'], truth_table['dec'])
-            plt.scatter(data_meas['ra'], data_meas['dec'])
+            plt.scatter(truth_table['ra'], truth_table['dec'], marker='.')
+            plt.scatter(_tab_star['ra'], _tab_star['dec'], marker='x')
+            plt.scatter(data_meas['ra'], data_meas['dec'], marker='+')
+            plt.figure()
+            plt.hist(data_meas[f'mag_{args.band}_cModel'], range=(10, 30), bins=50)
+            plt.hist(_tab_star[f'mag_{args.band}'], range=(10, 30), bins=50)
         dist, ids, matched, n_neigh_obj, n_neigh_truth = spatial_closest_mag_1band_3d(data_meas['ra'], data_meas['dec'],
                                                                                    data_meas[f'mag_{args.band}_cModel'],
                                                                                    truth_table['ra'],
@@ -144,13 +154,14 @@ for i, tract in enumerate(tracts[args.init:args.end]):
                                  'mag_u_lsst', 'mag_g_lsst','mag_r_lsst', 'mag_i_lsst', 'mag_z_lsst', 'mag_y_lsst',
                                  'redshift_true', 'dist', 'n_neigh_truth', 'n_neigh_object', 'shear_1', 'shear_2', 
                                  'ellipticity_1_true', 'ellipticity_2_true'))
-        if args.debug:
-            plt.figure()
-            plt.scatter(truth_table['ra'][ids][matched], data_meas['ra'][matched])
-            plt.figure()
-            plt.scatter(truth_table['dec'][ids][matched], data_meas['dec'][matched])
-            plt.figure()
-            plt.hist(truth_table['redshift'][ids][matched])
-            plt.show()
-        tab_out.write(nameout, overwrite=False)
+        print('Stars matched', np.count_nonzero(tab_out['is_star']))
+#        if args.debug:
+#            plt.figure()
+#            plt.scatter(truth_table['ra'][ids][matched], data_meas['ra'][matched])
+#            plt.figure()
+#            plt.scatter(truth_table['dec'][ids][matched], data_meas['dec'][matched])
+#            plt.figure()
+#            plt.hist(truth_table['redshift'][ids][matched])
+#            plt.show()
+        tab_out.write(nameout, overwrite=True)
 
